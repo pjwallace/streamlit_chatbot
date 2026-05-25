@@ -15,17 +15,19 @@ load_dotenv()
 DEFAULT_API_KEY = os.getenv("API_KEY")
 DEFAULT_BASE_URL = os.getenv("BASE_URL")
 DEFAULT_MODEL = os.getenv("MODEL")
-DEFAULT_SYSTEM_MESSAGE = """You are a senior surgeon answering medical students' questions.
-                             Give concise, direct, clinically accurate answers. Start with the main answer first. 
-                             Use short paragraphs or brief bullet points only when helpful. 
-                             Do not give long lectures unless the user asks for more detail."""
+DEFAULT_SYSTEM_MESSAGE = (
+    "You are a senior surgeon answering medical students' questions. "
+    "Give concise, direct, clinically accurate answers. Start with the main answer first. "
+    "Use short paragraphs or brief bullet points only when helpful. "
+    "Do not give long lectures unless the user asks for more detail."
+)
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 400
 DEFAULT_SEED = 12345
 DEFAULT_TOKEN_BUDGET = 4096
 DEFAULT_PERSONA = "Friendly"
 
-# Sensible CLI defaults
+# API/client
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 3
 
@@ -64,7 +66,7 @@ def configure_logging() -> None:
 
 # Conversation Manager class
 class ConversationManager:
-    def __init__(self, temperature=None,  max_tokens=None, system_message=None,  token_budget=None, persona=None):
+    def __init__(self, temperature=None,  max_tokens=None, token_budget=None, persona=None):
         
         # instance attributes
         self.api_key = DEFAULT_API_KEY 
@@ -72,7 +74,6 @@ class ConversationManager:
         self.model = DEFAULT_MODEL 
         self.temperature = temperature if temperature is not None else DEFAULT_TEMPERATURE
         self.max_tokens = max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS
-        #self.system_message = system_message if system_message is not None else DEFAULT_SYSTEM_MESSAGE
         self.timeout = DEFAULT_TIMEOUT_SECONDS 
         self.max_retries = DEFAULT_MAX_RETRIES 
         self.seed = DEFAULT_SEED 
@@ -83,19 +84,24 @@ class ConversationManager:
 
         # persona system messages
         self.persona_system_messages = {
-            "Friendly": """You are a senior surgeon answering medical students' questions.
-                             Give concise, direct, clinically accurate answers. Start with the main answer first. 
-                             Use short paragraphs or brief bullet points only when helpful. 
-                             Do not give long lectures unless the user asks for more detail. 
-                             You are always trying to be helpful.""",
-            "Stern": """You are a no-nonsense professor of surgery. You give short direct answers.
-                        If the student gives an incorrect answer, you can be sarcastic."""
+            "Friendly": ("You are a senior surgeon answering medical students' questions. "
+                        "Give concise, direct, clinically accurate answers. Start with the main answer first. " 
+                        "Use short paragraphs or brief bullet points only when helpful. "
+                        "Do not give long lectures unless the user asks for more detail. "
+                        "You are always trying to be helpful."
+            ),
+            "Stern": (
+                    "You are a no-nonsense professor of surgery. "
+                    "You give short, direct answers. "
+                    "If the student is incorrect, correct them firmly but professionally."
+            ),
             
         }
 
-        self.system_message = self.persona_system_messages[self.persona]
+        if self.persona not in self.persona_system_messages:
+            raise ValueError(f"Unknown persona: {self.persona}")
 
-        #self.history_file = history_file or self._generate_history_filename()
+        self.system_message = self.persona_system_messages[self.persona]
         self.conversation_history = self._default_history()
         #self._load_conversation_history()
                
@@ -393,41 +399,52 @@ def main():
 
     # Sidebar
     st.sidebar.header("Manage chatbot parameters")
-    max_tokens = st.sidebar.slider("Max tokens per message", min_value=100, max_value=500, value=400, step=100)
-    token_budget = st.sidebar.slider("Max tokens per conversation", min_value=1024, 
-            max_value=8192, value=4096, step=1024)
-    temperature = st.sidebar.slider("Temperature", min_value=0.1, max_value=1.0, value=0.1, step=0.1)
-    persona = st.sidebar.selectbox("Choose a persona", ["Friendly", "Stern"], index=0)
+    st.sidebar.slider(
+        "Max tokens per message", 
+        min_value=100, 
+        max_value=500, 
+        value=400, 
+        step=100,
+        key="max_tokens", #automatically creates and maintains: st.session_state["max_tokens"]
+        )
+    
+    st.sidebar.slider(
+        "Max tokens per conversation", 
+        min_value=1024, 
+        max_value=8192, 
+        value=4096, 
+        step=1024,
+        key="token_budget", #automatically creates and maintains: st.session_state["token_budget"]
+        )
+    
+    st.sidebar.slider(
+        "Temperature",
+        min_value=0.1, 
+        max_value=1.0, 
+        value=0.1, 
+        step=0.1,
+        key="temperature", #automatically creates and maintains: st.session_state["temperature"]
+    )
+    st.sidebar.selectbox(
+        "Choose a persona", 
+        ["Friendly", "Stern"], 
+        index=0,
+        key="persona", #automatically creates and maintains: st.session_state["persona"]
+        )
 
     clear_history = st.sidebar.button("Clear chat history")
-
-    # session state
-    # initialize session state variables
-    if 'max_tokens' not in st.session_state:
-        st.session_state['max_tokens'] = max_tokens
-
-    if 'token_budget' not in st.session_state:
-        st.session_state['token_budget'] = token_budget
-    
-    if 'temperature' not in st.session_state:
-        st.session_state['temperature'] = temperature
-    
-    if 'persona' not in st.session_state:
-        st.session_state['persona'] = persona
-
-    
-    
+       
     try:
         cm = ConversationManager(           
-            temperature = st.session_state['temperature'],
-            max_tokens = st.session_state['max_tokens'],            
-            token_budget = st.session_state['token_budget'],
-            persona = st.session_state['persona']
+            temperature = st.session_state.temperature,
+            max_tokens = st.session_state.max_tokens,            
+            token_budget = st.session_state.token_budget,
+            persona = st.session_state.persona
         )
     except ValueError as e:
         logger.exception("Configuration error")
-        print(f"Configuration error: {e}")
-        sys.exit(2)
+        st.error(f"Configuration error: {e}")
+        st.stop()
 
     logger.debug(
         "ConversationManager config: "
@@ -444,36 +461,36 @@ def main():
     with st.chat_message("assistant"):
         st.write("Ask a question related to surgery.")
 
-    while True:
-        try:
-            prompt = st.chat_input("Ask a question")
-            prompt = prompt.strip()
-            if not prompt:
-                print("Please enter a question or response (or type 'quit').")
-                continue
-            if prompt.lower() in {"exit", "quit"}:
-                break
-            ai_response = cm.chat_completion(prompt)
-            if ai_response:
-                for chat in cm.conversation_history[1:]:
-                    with st.chat_message(chat["role"]):
-                        st.write(chat["content"])
+   
+    try:
+        prompt = st.chat_input("Ask a question")
+        #prompt = prompt.strip()
+        if not prompt:
+            st.stop()
+            
+        if prompt.lower() in {"exit", "quit"}:
+            st.stop()
+        ai_response = cm.chat_completion(prompt)
+        if ai_response:
+            for chat in cm.conversation_history[1:]:
+                with st.chat_message(chat["role"]):
+                    st.write(chat["content"])
 
 
-        except AuthenticationError:
-            logger.exception("Authentication failed")
-            print("Authentication failed. Check your API key.")
-            sys.exit(1)
+    except AuthenticationError:
+        logger.exception("Authentication failed")
+        st.error("Authentication failed. Check your API key.")
+        st.stop()
 
-        except RateLimitError:
-            logger.exception("Rate limit exceeded")
-            print("Rate limit exceeded. Please try again later.")
-            sys.exit(1)
+    except RateLimitError:
+        logger.exception("Rate limit exceeded")
+        st.error("Rate limit exceeded. Please try again later.")
+        st.stop()
 
-        except Exception:
-            logger.exception("Unexpected error")
-            print("An unexpected error occurred.")
-            sys.exit(1)
+    except Exception:
+        logger.exception("Unexpected error")
+        st.error("An unexpected error occurred.")
+        st.stop()
     
 
 if __name__ == "__main__":
